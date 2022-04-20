@@ -1,0 +1,111 @@
+rm(list = ls())
+
+# Pacotes
+if(require(devtools) == F) install.packages('devtools'); require(devtools)
+if(require(dplyr) == F) install.packages('dplyr'); require(dplyr)
+if(require(haven) == F) install.packages('haven'); require(haven)
+if(require(httr) == F) install.packages('httr'); require(httr)
+if(require(readxl) == F) install.packages('readxl'); require(readxl)
+if(require(stringr) == F) install.packages('stringr'); require(stringr)
+if(require(tidyverse) == F) install.packages('tidyverse'); require(tidyverse)
+
+# Instalando o pacote "ipeadatar" para identificar o codigo das series do Ipeadata. Esse passo nao e crucial para a extracao de dados em si
+devtools::install_github("gomesleduardo/ipeadatar")
+
+# 1. EXTRACAO DE DADOS
+
+# 1.1 Taxa Basica de Juros - Sistema Especial de Liquidacao e Custodia (Selic)
+
+# Armazenando temporariamente o arquivo
+GET("https://www.bis.org/statistics/cbpol/cbpol_2203.xlsx", write_disk(tf <- tempfile(fileext = ".xlsx")))
+
+# Extraindo os dados
+selic <- read_excel(tf, sheet = 3, range = c("A490:D918"), col_types = c("date", "numeric", "numeric", "numeric"), 
+                    col_names = c("data", "2", "3", "selic"))
+
+# Removendo o objeto correspondente ao arquivo temporario (este sera deletado automaticamente quando sessao atual do R for terminada)
+rm("tf")
+
+# Deletando colunas relacionadas a outros paises que nao o Brasil
+selic <- selic[,-2:-3]
+
+# Homogeneizando o formato de tempo por mes
+selic$data <- as.Date(paste(format(selic$data, format = "%Y-%m"), "-01", sep = ""))
+
+# 1.2 Inflacao
+
+# 1.2.1 Indice de Pre?os ao Consumidor Amplo - Itens Livres (IPCA; %a.m)
+ipca_l <- read.csv2("http://api.bcb.gov.br/dados/serie/bcdata.sgs.11428/dados?formato=csv", 
+                    sep = ";", col.names = c("data", "ipca_l"))
+
+# Definindo coluna como data
+ipca_l$data <- as.Date(ipca_l$data, format = "%d/%m/%Y")
+
+# Homogeneizando o formato de tempo por mes
+ipca_l$data <- as.Date(paste(format(ipca_l$data, format = "%Y-%m"), "-01", sep = ""))
+
+# 1.2.2 Indice Geral de Precos - Disponibilidade Interna (IGP-DI; %a.m)
+
+# Cria um objeto listando todas as series identificadas pelo termo IGP-DI
+ipeadatar::search_series(terms = c("IGP-DI"))
+
+## O codigo identificado e "IGP12_IGPDIG12", correspondente a serie "IGP-DI"
+
+# Web-scrapping da pagina onde se encontram dados sobre IGP-DI a partir do codigo da serie desejada
+igp_di <- httr::GET(
+  sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 	"IGP12_IGPDIG12")
+)
+
+# Filtrar os valores contidos na tabela do site Ipeadata
+igp_di <- httr::content(igp_di)[[2]] %>% 
+  dplyr::bind_rows() %>% 
+  dplyr::select("data" = `VALDATA`, "igp_di" = `VALVALOR`) %>% 
+  dplyr::mutate(data = as.Date(data))
+
+# 1.3 Taxa de Cambio (R$/US$) - Comercial - Compra - Media
+
+# Cria um objeto listando todas as series identificadas pelo termo IGP-DI
+ipeadatar::search_series(terms = c("c?mbio"))
+
+## O codigo identificado e "BM12_ERC12", correspondente a serie "Taxa de cambio - R$ / US$ - comercial - compra - media"
+
+# Web-scrapping da pagina onde se encontram dados sobre IGP-DI a partir do codigo da serie desejada
+cambio <- httr::GET(
+  sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 	"BM12_ERC12")
+)
+
+# Filtrar os valores contidos na tabela do site Ipeadata
+cambio <- httr::content(cambio)[[2]] %>% 
+  dplyr::bind_rows() %>% 
+  dplyr::select("data" = `VALDATA`, "cambio" = `VALVALOR`) %>% 
+  dplyr::mutate(data = as.Date(data))
+
+# 2. UNIAO DE DATAFRAMES
+
+# Delimitando a serie temporal
+selic <- selic %>%
+  filter(data >= "1998-01-01" & data <= "2019-12-01")
+
+cambio <- cambio %>%
+  filter(data >= "1998-01-01" & data <= "2019-12-01")
+
+igp_di <- igp_di %>%
+  filter(data >= "1998-01-01" & data <= "2019-12-01")
+
+ipca_l <- ipca_l %>%
+  filter(data >= "1998-01-01" & data <= "2019-12-01")
+
+# Combinacao
+
+database <- data.frame(data = selic$data, selic = selic$selic, cambio = cambio$cambio, igp_di = igp_di$igp_di, ipca_l = ipca_l$ipca_l)
+
+# Exportando arquivos de dados
+
+# Formato Stata
+write_dta(database, path = "data/cbpol_database.dta")
+
+# Formato csv
+write.csv2(database, file = "data/cbpol_database.csv", row.names = FALSE)
+
+# Formato R
+write_rds(database, file = "data/cbpol_database.Rds")
