@@ -34,7 +34,7 @@ selic$data <- as.Date(paste(format(selic$data, format = "%Y-%m"), "-01", sep = "
 
 # 1.2 Inflacao
 
-# 1.2.1 Indice de Pre?os ao Consumidor Amplo - Itens Livres (IPCA; %a.m)
+# 1.2.1 Indice de Precos ao Consumidor Amplo - Itens Livres (IPCA; %a.m)
 ipca_l <- read.csv2("http://api.bcb.gov.br/dados/serie/bcdata.sgs.11428/dados?formato=csv", 
                     sep = ";", col.names = c("data", "ipca_l"))
 
@@ -65,7 +65,7 @@ igp_di <- httr::content(igp_di)[[2]] %>%
 # 1.3 Taxa de Cambio (R$/US$) - Comercial - Compra - Media
 
 # Cria um objeto listando todas as series identificadas pelo termo IGP-DI
-ipeadatar::search_series(terms = c("c?mbio"))
+ipeadatar::search_series(terms = c("cambio"))
 
 ## O codigo identificado e "BM12_ERC12", correspondente a serie "Taxa de cambio - R$ / US$ - comercial - compra - media"
 
@@ -101,11 +101,13 @@ database <- data.frame(data = selic$data, selic = selic$selic, cambio = cambio$c
 
 # Exportando arquivos de dados
 
-# Formato Stata
-write_dta(database, path = "data/cbpol_database.dta")
+# Os dados sao exportados para a pasta "dados", localizada no diretorio parente ao atual
 
-# Formato csv
-write.csv2(database, file = "data/cbpol_database.csv", row.names = FALSE)
+# Formato .dta (nativo do Stata)
+write_dta(database, path = paste(dirname(getwd()), "dados/cbpol_database.dta", sep = "/"))
 
-# Formato R
-write_rds(database, file = "data/cbpol_database.Rds")
+# Formato .Rds (nativo do R)
+write_rds(database, file = paste(dirname(getwd()), "dados/cbpol_database.Rds", sep = "/"))
+
+# Formato .csv (comma separated values)
+write.csv2(database, file = paste(dirname(getwd()), "dados/cbpol_database.csv", sep = "/"), row.names = FALSE)
