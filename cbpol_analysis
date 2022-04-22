@@ -1,0 +1,164 @@
+* 1. Importando os dados
+clear
+use "..\dados\cbpol_database.dta" // Importa a base de dados a partir de uma pasta localizada no diretório parente
+
+* 2. Transformações
+* 2.1 Formatando a variável de tempo
+replace data = mofd(data)
+format %tm data
+tsset data
+
+* 2.2 Criar variável de juros  em primeira diferença
+generate d_selic = selic[_n]-selic[_n-1]
+
+* 2.3 Criar variável de câmbio mensurada em variação percentual
+gen cambio_p = ((cambio[_n]/cambio[_n-1])-1)*100
+
+* 2.4 Deletando observações anteriores a junho de 1999
+drop if data<tm(1999m6)
+
+* 3. Procurando o modelo mais eficiente
+* 3.1 Seleção de defasagem para os testes de raiz unitária
+varsoc ipca_l 
+varsoc igp_di
+varsoc selic
+varsoc d_selic
+varsoc cambio_p
+
+* 3.2 Testes de raiz unitária (Anexo)
+* 3.2.1 Dickey Fuller Aumentado (Anexo I)
+dfuller ipca_l, trend lags(1)
+dfuller igp_di, trend lags(1)
+dfuller selic, trend lags(3)
+dfuller d_selic, trend lags(2)
+dfuller cambio_p, trend lags(1)
+
+* 3.2.2 Phillips-Perron (Anexo II)
+pperron ipca_l, trend lags(1)
+pperron igp_di, trend lags(1)
+pperron selic, trend lags(3)
+pperron d_selic, trend lags(2)
+pperron cambio_p, trend lags(1)
+
+* 3.3 Seleção de defasagem para os modelos simples de Vetores Autorregressivos (Anexo III)
+* 3.3.1 Selic
+varsoc ipca_l d_selic
+varsoc igp_di d_selic
+
+* 3.3.2 Câmbio
+varsoc ipca_l cambio_p
+varsoc igp_di cambio_p
+
+**************************************************************************************
+
+* 4. Estimando modelos simples de Vetores Autorregressivos (VAR) (Tabelas 1 e 2)
+
+* 4.1 Selic & IPCA (Tabela 1)
+* 4.1.1 Estimação dos parâmetros
+var ipca_l d_selic, lags(1,2)
+
+* 4.1.2 Círculo unitário (Anexo IV)
+varstable, graph graphregion(color(white)) xtitle("") ytitle("") title("{stSerif} Modelo 1", size(huge) color(black)) subtitle("")
+graph export "..\output\circle1.png", replace
+
+* 4.1.3 Funções impulso-resposta
+irf create var, step(12) set(myirf) replace 
+
+* Selic -> IPCA
+irf table oirf, impulse(d_selic) response(ipca_l)
+irf graph oirf, impulse(d_selic) response(ipca_l) yline(0,lcolor(black)) xlabel(0(2)12) byopts(yrescale legend(off) graphregion(color(white)) /*
+*/ plotregion(color(white)) bgcolor(white) note("")) xtitle("{stSerif} Meses", size(large)) title("{stSerif} [1] Selic => IPCA",  size(huge) color(black)) subtitle("") /* 
+*/ ciopts1 (recast(rline) lpattern(dash) lcolor(gs0)) ylabel(, labsize(vlarge)) xlabel(, labsize(vlarge))
+
+graph export "..\output\selic_on_ipca.png", replace
+
+* IPCA -> IPCA
+irf table oirf, impulse(ipca_l) response(ipca_l)
+irf graph oirf, impulse(ipca_l) response(ipca_l) yline(0,lcolor(black)) xlabel(0(2)12) byopts(yrescale legend(off) graphregion(color(white)) /*
+*/ plotregion(color(white)) bgcolor(white) note("")) xtitle("{stSerif} Meses", size(large)) title("{stSerif} [1] IPCA => IPCA",  size(huge)  color(black)) subtitle("") /* 
+*/ ciopts1 (recast(rline) lpattern(dash) lcolor(gs0)) ylabel(, labsize(vlarge)) xlabel(, labsize(vlarge))
+
+graph export "..\output\ipca_on_ipca.png", replace
+
+* 4.1.4 Decomposição da variância (Tabela 3)
+irf set vardecomp
+irf create vardecomp, step(12) replace
+irf table fevd, stderror
+
+**************************************************************************************
+
+* 4.2 Selic & IGP-DI (Tabela 1)
+* 4.2.1 Estimação dos parâmetros
+var igp_di d_selic, lags(1,2) 
+
+* 4.2.2 Círculo unitário (Anexo IV)
+varstable, graph graphregion(color(white)) xtitle("") ytitle("") title("{stSerif} Modelo 2", size(huge) color(black)) subtitle("")
+graph export "..\output\circle2.png", replace
+
+* 4.2.3 Funções impulso-resposta
+irf create var, step(12) set(myirf) replace 
+
+* Selic -> IGP-DI
+irf table oirf, impulse(d_selic) response(igp_di)
+irf graph oirf, impulse(d_selic) response(igp_di) yline(0,lcolor(black)) xlabel(0(2)12) byopts(yrescale legend(off) graphregion(color(white)) /*
+*/ plotregion(color(white)) bgcolor(white) note("")) xtitle("{stSerif} Meses", size(large)) title("{stSerif} [2] Selic => IGP-DI",  size(huge)  color(black)) subtitle("") /* 
+*/ ciopts1 (recast(rline) lpattern(dash) lcolor(gs0)) ylabel(, labsize(vlarge)) xlabel(, labsize(vlarge))
+
+graph export "..\output\selic_on_igpdi.png", replace
+
+* IGP-DI -> IGP-DI
+irf table oirf, impulse(igp_di) response(igp_di)
+irf graph oirf, impulse(igp_di) response(igp_di) yline(0,lcolor(black)) xlabel(0(2)12) byopts(yrescale legend(off) graphregion(color(white)) /*
+*/ plotregion(color(white)) bgcolor(white) note("")) xtitle("{stSerif} Meses", size(large)) title("{stSerif} [2] IGP-DI => IGP-DI",  size(huge)  color(black)) subtitle("") /* 
+*/ ciopts1 (recast(rline) lpattern(dash) lcolor(gs0)) ylabel(, labsize(vlarge)) xlabel(, labsize(vlarge))
+
+graph export "..\output\igpdi_on_igpdi.png", replace
+
+**************************************************************************************
+
+* 4.3 Câmbio & IPCA (Tabela 2)
+* 4.3.1 Estimação dos parâmetros
+var ipca_l cambio_p, lags(1)
+
+* 4.3.2 Círculo unitário (Anexo IV)
+varstable, graph graphregion(color(white)) xtitle("") ytitle("") title("{stSerif} Modelo 3", size(huge) color(black)) subtitle("")
+graph export "..\output\circle3.png", replace
+
+* 4.3.3 Funções impulso-resposta
+irf create var, step(12) set(myirf) replace 
+
+* Câmbio -> IPCA
+irf table oirf, impulse(cambio_p) response(ipca_l)
+irf graph oirf, impulse(cambio_p) response(ipca_l) yline(0,lcolor(black)) xlabel(0(2)12) byopts(yrescale legend(off) graphregion(color(white)) /*
+*/ plotregion(color(white)) bgcolor(white) note("")) xtitle("{stSerif} Meses", size(large)) title("{stSerif} [3] Câmbio => IPCA",  size(huge)  color(black)) subtitle("") /* 
+*/ ciopts1 (recast(rline) lpattern(dash) lcolor(gs0)) ylabel(, labsize(vlarge)) xlabel(, labsize(vlarge))
+
+graph export "..\output\cambio_on_ipca.png", replace
+
+* 4.3.4 Decomposição da variância (Tabela 3)
+irf set vardecomp
+irf create vardecomp, step(12) replace
+irf table fevd, stderror
+
+**************************************************************************************
+
+* 4.4 Câmbio & IGP-DI (Tabela 2)
+* 4.4.1 Estimação dos parâmetros
+var igp_di cambio_p, lags(1)
+
+* 4.4.2 Círculo unitário (Anexo IV)
+varstable, graph graphregion(color(white)) xtitle("") ytitle("") title("{stSerif} Modelo 4", size(huge) color(black)) subtitle("")
+graph export "..\output\circle4.png", replace
+
+* 4.4.3 Funções impulso-resposta
+irf create var, step(12) set(myirf) replace 
+
+* Câmbio -> IGP-DI
+irf table oirf, impulse(cambio_p) response(igp_di)
+irf graph oirf, impulse(cambio_p) response(igp_di) yline(0,lcolor(black)) xlabel(0(2)12) byopts(yrescale legend(off) graphregion(color(white)) /*
+*/ plotregion(color(white)) bgcolor(white) note("")) xtitle("{stSerif} Meses", size(large)) title("{stSerif} [4] Câmbio => IGP-DI",  size(huge)  color(black)) subtitle("") /* 
+*/ ciopts1 (recast(rline) lpattern(dash) lcolor(gs0)) ylabel(, labsize(vlarge)) xlabel(, labsize(vlarge))
+
+graph export "..\output\cambio_on_igpdi.png", replace
+
+**************************************************************************************
