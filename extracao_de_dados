@@ -1,29 +1,36 @@
+# Na presenca de algum erro no codigo, sinta-se a vontade para relatar o problema aos autores
+
+# Limpeza do ambiente de trabalho
 rm(list = ls())
 
-# Pacotes
+# Pacotes utilizados ao longo do codigo
 if(require(devtools) == F) install.packages('devtools'); require(devtools)
 if(require(dplyr) == F) install.packages('dplyr'); require(dplyr)
 if(require(haven) == F) install.packages('haven'); require(haven)
 if(require(httr) == F) install.packages('httr'); require(httr)
 if(require(readxl) == F) install.packages('readxl'); require(readxl)
-if(require(stringr) == F) install.packages('stringr'); require(stringr)
 if(require(tidyverse) == F) install.packages('tidyverse'); require(tidyverse)
 
-# Instalando o pacote "ipeadatar" para identificar o codigo das series do Ipeadata. Esse passo nao e crucial para a extracao de dados em si
+# Instalacao do pacote "ipeadatar" para identificar o codigo das series temporais do Ipeadata e orientar a extracao dos dados desejados
 devtools::install_github("gomesleduardo/ipeadatar")
 
-# 1. EXTRACAO DE DADOS
+################################################################
+
+# 1. Extracao de dados
 
 # 1.1 Taxa Basica de Juros - Sistema Especial de Liquidacao e Custodia (Selic)
 
-# Armazenando temporariamente o arquivo
+# Download provisorio e integral da planilha do Bank for International Settlements (BIS) em um diretorio temporario do computador e
+# criacao de um objeto na area de trabalho vinculando-o a planilha do BIS
 GET("https://www.bis.org/statistics/cbpol/cbpol_2203.xlsx", write_disk(tf <- tempfile(fileext = ".xlsx")))
 
-# Extraindo os dados
+# O arquivo acima sera excluido no momento em que esta sessao do R for finalizada
+
+# Inicio da extracao dos dados relevantes para o ambiente de trabalho do R
 selic <- read_excel(tf, sheet = 3, range = c("A490:D918"), col_types = c("date", "numeric", "numeric", "numeric"), 
                     col_names = c("data", "2", "3", "selic"))
 
-# Removendo o objeto correspondente ao arquivo temporario (este sera deletado automaticamente quando sessao atual do R for terminada)
+# Removendo o objeto vinculado ao arquivo temporario
 rm("tf")
 
 # Deletando colunas relacionadas a outros paises que nao o Brasil
@@ -32,9 +39,13 @@ selic <- selic[,-2:-3]
 # Homogeneizando o formato de tempo por mes
 selic$data <- as.Date(paste(format(selic$data, format = "%Y-%m"), "-01", sep = ""))
 
+########################################################################
+
 # 1.2 Inflacao
 
 # 1.2.1 Indice de Precos ao Consumidor Amplo - Itens Livres (IPCA; %a.m)
+
+# Extracao dos dados diretamente do website do Banco Central do Brasil (BCB)
 ipca_l <- read.csv2("http://api.bcb.gov.br/dados/serie/bcdata.sgs.11428/dados?formato=csv", 
                     sep = ";", col.names = c("data", "ipca_l"))
 
@@ -44,45 +55,60 @@ ipca_l$data <- as.Date(ipca_l$data, format = "%d/%m/%Y")
 # Homogeneizando o formato de tempo por mes
 ipca_l$data <- as.Date(paste(format(ipca_l$data, format = "%Y-%m"), "-01", sep = ""))
 
+#######################################################################
+
 # 1.2.2 Indice Geral de Precos - Disponibilidade Interna (IGP-DI; %a.m)
 
-# Cria um objeto listando todas as series identificadas pelo termo IGP-DI
-ipeadatar::search_series(terms = c("IGP-DI"))
+# Realiza uma busca sobre as series que contem o termo "IGP-DI" e armazena os respectivos resultados em um objeto
+code1 <- ipeadatar::search_series(terms = "IGP-DI")
 
-## O codigo identificado e "IGP12_IGPDIG12", correspondente a serie "IGP-DI"
+# Localiza o unico resultado de interesse, que corresponde ao exato termo "IGP-DI" em frequencia mensal
+code1 <- dplyr::filter(code1, grepl("^IGP-DI$", name), grepl("^Monthly$", freq))
 
-# Web-scrapping da pagina onde se encontram dados sobre IGP-DI a partir do codigo da serie desejada
-igp_di <- httr::GET(
-  sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 	"IGP12_IGPDIG12")
+# O codigo identificado e "IGP12_IGPDIG12" e esta armazenado na primeira linha e primeira coluna do objeto acima
+
+# Web-scrapping da pagina onde se encontram dados sobre IGP-DI
+igp_di <- httr::GET(sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 
+          code1[1,1])
 )
 
-# Filtrar os valores contidos na tabela do site Ipeadata
+# Selecionar os valores de interesse contidos no site do Ipeadata
 igp_di <- httr::content(igp_di)[[2]] %>% 
   dplyr::bind_rows() %>% 
   dplyr::select("data" = `VALDATA`, "igp_di" = `VALVALOR`) %>% 
-  dplyr::mutate(data = as.Date(data))
+  dplyr::mutate(data = as.Date(data)) # formatacao da variavel de tempo
+
+#######################################################################
 
 # 1.3 Taxa de Cambio (R$/US$) - Comercial - Compra - Media
 
-# Cria um objeto listando todas as series identificadas pelo termo IGP-DI
-ipeadatar::search_series(terms = c("cambio"))
+# Realiza uma busca sobre as series que contem o termo "cambio" e armazena os respectivos resultados em um objeto
+code2 <- ipeadatar::search_series(terms = parse_character("c\xe2mbio", locale = locale(encoding = "Latin1"))) # "\xe2" consiste na letra "a" com acento circunflexo
 
-## O codigo identificado e "BM12_ERC12", correspondente a serie "Taxa de cambio - R$ / US$ - comercial - compra - media"
+# Localiza o unico resultado de interesse, que corresponde a expressao "Taxa de cambio - R$ / US$ - comercial - compra - media" em frequencia mensal
+code2 <- filter(code2, 
+          grepl("Taxa de c\xe2mbio - R\\$ / US\\$ - comercial - compra - m\xe9dia", name), # "\xe9" consiste na letra "e" com acento agudo
+          grepl("^Monthly$", freq)
+          )
 
-# Web-scrapping da pagina onde se encontram dados sobre IGP-DI a partir do codigo da serie desejada
-cambio <- httr::GET(
-  sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 	"BM12_ERC12")
+# O codigo identificado e "BM12_ERC12" e esta armazenado na primeira linha e primeira coluna do objeto acima
+
+# Web-scrapping da pagina onde se encontram dados sobre taxa de cambio nominal
+cambio <- httr::GET(sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 
+                              code2[1,1])
 )
 
-# Filtrar os valores contidos na tabela do site Ipeadata
+# Selecionar os valores de interesse contidos no site do Ipeadata
 cambio <- httr::content(cambio)[[2]] %>% 
   dplyr::bind_rows() %>% 
   dplyr::select("data" = `VALDATA`, "cambio" = `VALVALOR`) %>% 
-  dplyr::mutate(data = as.Date(data))
+  dplyr::mutate(data = as.Date(data)) # formatacao da variavel de tempo
 
-# 2. UNIAO DE DATAFRAMES
+#######################################################################
 
-# Delimitando a serie temporal
+# 2. Integracao dos dados
+
+# Homogeneizacao do recorte temporal de todas as series
 selic <- selic %>%
   filter(data >= "1998-01-01" & data <= "2019-12-01")
 
@@ -95,19 +121,17 @@ igp_di <- igp_di %>%
 ipca_l <- ipca_l %>%
   filter(data >= "1998-01-01" & data <= "2019-12-01")
 
-# Combinacao
-
+# Uniao das variaveis sob um unico dataframe
 database <- data.frame(data = selic$data, selic = selic$selic, cambio = cambio$cambio, igp_di = igp_di$igp_di, ipca_l = ipca_l$ipca_l)
 
-# Exportando arquivos de dados
+#######################################################################
 
-# Os dados sao exportados para a pasta "dados", localizada no diretorio parente ao atual
-
+# 3. Exportacao da base de dados
 # Formato .dta (nativo do Stata)
-write_dta(database, path = paste(dirname(getwd()), "dados/cbpol_database.dta", sep = "/"))
+write_dta(database, path = "cbpol_database.dta")
 
 # Formato .Rds (nativo do R)
-write_rds(database, file = paste(dirname(getwd()), "dados/cbpol_database.Rds", sep = "/"))
+write_rds(database, file = "cbpol_database.Rds")
 
 # Formato .csv (comma separated values)
-write.csv2(database, file = paste(dirname(getwd()), "dados/cbpol_database.csv", sep = "/"), row.names = FALSE)
+write.csv2(database, file = "cbpol_database.csv", row.names = FALSE)
