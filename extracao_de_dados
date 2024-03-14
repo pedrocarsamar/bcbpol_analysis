@@ -69,7 +69,7 @@ code1 <- dplyr::filter(code1, grepl("^IGP-DI$", name), grepl("^Monthly$", freq))
 
 # Web-scrapping da pagina onde se encontram dados sobre IGP-DI
 igp_di <- httr::GET(sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 
-          code1[1,1])
+                            code1[1,1])
 )
 
 # Selecionar os valores de interesse contidos no site do Ipeadata
@@ -81,21 +81,22 @@ igp_di <- httr::content(igp_di)[[2]] %>%
 #######################################################################
 
 # 1.3 Taxa de Cambio (R$/US$) - Comercial - Compra - Media
+# cat(stringi::stri_escape_unicode(c("ê")))
 
 # Realiza uma busca sobre as series que contem o termo "cambio" e armazena os respectivos resultados em um objeto
-code2 <- ipeadatar::search_series(terms = parse_character("c\xe2mbio", locale = locale(encoding = "Latin1"))) # "\xe2" consiste na letra "a" com acento circunflexo
+code2 <- ipeadatar::search_series(terms = 'c\u00e2mbio')
 
 # Localiza o unico resultado de interesse, que corresponde a expressao "Taxa de cambio - R$ / US$ - comercial - compra - media" em frequencia mensal
 code2 <- filter(code2, 
-          grepl("Taxa de c\xe2mbio - R\\$ / US\\$ - comercial - compra - m\xe9dia", name), # "\xe9" consiste na letra "e" com acento agudo
-          grepl("^Monthly$", freq)
-          )
+                grepl("Taxa de c\u00e2mbio - R\\$ / US\\$ - comercial - compra - m\u00e9dia", name),
+                grepl("^Monthly$", freq)
+)
 
 # O codigo identificado e "BM12_ERC12" e esta armazenado na primeira linha e primeira coluna do objeto acima
 
 # Web-scrapping da pagina onde se encontram dados sobre taxa de cambio nominal
 cambio <- httr::GET(sprintf("http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='%s')", 
-                              code2[1,1])
+                            code2[1,1])
 )
 
 # Selecionar os valores de interesse contidos no site do Ipeadata
